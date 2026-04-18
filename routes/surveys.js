@@ -63,7 +63,7 @@ router.post('/survey-responses', async (req, res) => {
                     // 2. Cộng điểm
                     await pool.query('UPDATE users SET points = points + $1 WHERE phone = $2', [pointsReward, phone]);
 
-                    // 3. GHI VÀO LỊCH SỬ (Để hiện lên tab Lịch sử bên VolunteerPage)
+                    // 3. GHI VÀO LỊCH SỬ (Để hiện lên tab Lịch sử)
                     const reason = `Thưởng làm khảo sát: ${survey.title}`;
                     await pool.query('INSERT INTO point_history (phone, name, reason, points) VALUES ($1, $2, $3, $4)', [phone, user_name, reason, pointsReward]);
                 }
@@ -75,17 +75,34 @@ router.post('/survey-responses', async (req, res) => {
     }
 });
 
-// Lấy danh sách người đã trả lời
+// Lấy danh sách người đã trả lời (Dành cho Admin)
 router.get('/survey-responses', async (req, res) => {
     const result = await pool.query(`SELECT r.*, s.title as survey_title FROM survey_responses r JOIN surveys s ON r.survey_id = s.id ORDER BY r.submitted_at DESC`);
     res.json(result.rows);
 });
 
-// ✅ THÊM MỚI: API XOÁ KẾT QUẢ KHẢO SÁT CỦA NGƯỜI DÂN TỪ ADMIN
+// ✅ API XOÁ KẾT QUẢ KHẢO SÁT CỦA NGƯỜI DÂN TỪ ADMIN
 router.delete('/survey-responses/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM survey_responses WHERE id = $1', [req.params.id]);
         res.json({ message: "Đã xoá kết quả thành công!" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ✅ API LẤY DANH SÁCH BÀI KHẢO SÁT USER ĐÃ HOÀN THÀNH (Có kèm thông tin để hiển thị bên Tab "Đã làm")
+router.get('/completed/:phone', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT r.id as response_id, r.survey_id, r.submitted_at, s.title, s.description 
+            FROM survey_responses r
+            JOIN surveys s ON r.survey_id = s.id
+            WHERE r.answers->>'phone' = $1
+            ORDER BY r.submitted_at DESC
+        `, [req.params.phone]);
+
+        res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
