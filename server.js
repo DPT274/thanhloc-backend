@@ -47,6 +47,11 @@ app.use('/api', require('./routes/system'));
 // 🌟 ✅ CHÌA KHOÁ GIẢI QUYẾT LỖI 404 KHẢO SÁT LÀ DÒNG NÀY:
 app.use('/api', require('./routes/surveys'));
 
+
+// Khai báo file webhook mới tạo
+app.use('/api', require('./routes/webhook'));
+
+
 // Khởi động server
 app.listen(PORT, () => {
     console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
