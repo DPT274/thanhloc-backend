@@ -47,6 +47,12 @@ const initDB = async () => {
         // BẢNG KINH TẾ - DU LỊCH
         await pool.query(`CREATE TABLE IF NOT EXISTS tourism_places (id SERIAL PRIMARY KEY, category TEXT, name TEXT, address TEXT, phone TEXT, description TEXT, image TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
 
+
+        // Thêm vào file db.js (Chỗ bảng KINH TẾ - DU LỊCH)
+        await pool.query(`ALTER TABLE tourism_places ADD COLUMN IF NOT EXISTS rating TEXT;`).catch(() => { });
+        await pool.query(`ALTER TABLE tourism_places ADD COLUMN IF NOT EXISTS price TEXT;`).catch(() => { });
+        await pool.query(`ALTER TABLE tourism_places ADD COLUMN IF NOT EXISTS open_hours TEXT;`).catch(() => { });
+
         // 🌟 CODE MỚI ĐỂ LƯU LINK MAP VÀ FANPAGE
         await pool.query(`ALTER TABLE tourism_places ADD COLUMN IF NOT EXISTS map_link TEXT;`).catch(() => console.log("Đã có map_link"));
         await pool.query(`ALTER TABLE tourism_places ADD COLUMN IF NOT EXISTS page_link TEXT;`).catch(() => console.log("Đã có page_link"));

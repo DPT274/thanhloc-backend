@@ -43,7 +43,6 @@ router.delete('/categories/:category', async (req, res) => {
 
 // ==========================================
 // 2. QUẢN LÝ ĐỊA ĐIỂM (Nhà hàng, Khách sạn...)
-// ĐÃ THÊM MAP_LINK VÀ PAGE_LINK
 // ==========================================
 
 router.get('/:category', async (req, res) => {
@@ -53,23 +52,25 @@ router.get('/:category', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ✅ ĐÃ SỬA: Form Thêm mới nhận đầy đủ Dữ liệu (rating, price, open_hours)
 router.post('/', async (req, res) => {
     try {
-        const { category, name, address, phone, description, image, map_link, page_link } = req.body;
+        const { category, name, address, phone, description, image, map_link, page_link, rating, price, open_hours } = req.body;
         await pool.query(
-            'INSERT INTO tourism_places (category, name, address, phone, description, image, map_link, page_link) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-            [category, name, address, phone, description, image, map_link, page_link]
+            'INSERT INTO tourism_places (category, name, address, phone, description, image, map_link, page_link, rating, price, open_hours) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+            [category, name, address, phone, description, image, map_link, page_link, rating, price, open_hours]
         );
         res.json({ message: "Thêm thành công!" });
-    } catch (e) { res.status(500).json({ error: "Lỗi hệ thống hoặc ảnh quá lớn!" }); }
+    } catch (e) { res.status(500).json({ error: "Lỗi hệ thống!" }); }
 });
 
+// ✅ ĐÃ SỬA: Form Cập nhật nhận đầy đủ Dữ liệu (rating, price, open_hours)
 router.put('/:id', async (req, res) => {
     try {
-        const { category, name, address, phone, description, image, map_link, page_link } = req.body;
+        const { category, name, address, phone, description, image, map_link, page_link, rating, price, open_hours } = req.body;
         await pool.query(
-            'UPDATE tourism_places SET category = $1, name = $2, address = $3, phone = $4, description = $5, image = $6, map_link = $7, page_link = $8 WHERE id = $9',
-            [category, name, address, phone, description, image, map_link, page_link, req.params.id]
+            'UPDATE tourism_places SET category = $1, name = $2, address = $3, phone = $4, description = $5, image = $6, map_link = $7, page_link = $8, rating = $9, price = $10, open_hours = $11 WHERE id = $12',
+            [category, name, address, phone, description, image, map_link, page_link, rating, price, open_hours, req.params.id]
         );
         res.json({ message: "Cập nhật thành công!" });
     } catch (e) { res.status(500).json({ error: e.message }); }
