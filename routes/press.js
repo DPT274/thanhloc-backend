@@ -19,6 +19,20 @@ router.post('/', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// THÊM MỚI: Cập nhật báo
+router.put('/:id', async (req, res) => {
+    const { name, image, link } = req.body;
+    try {
+        await pool.query(
+            'UPDATE press SET name = $1, image = $2, link = $3 WHERE id = $4',
+            [name, image, link, req.params.id]
+        );
+        res.json({ message: "Đã cập nhật thành công" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Xóa báo
 router.delete('/:id', async (req, res) => {
     try {
