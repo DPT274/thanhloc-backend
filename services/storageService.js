@@ -1,22 +1,34 @@
+// file: services/storageService.js
 const supabase = require('../config/supabaseConfig');
+const sharp = require('sharp'); // ✅ Gọi thư viện nén ảnh
 
 const BUCKET_NAME = 'apd_public_assets';
 
 /**
- * 1. HÀM UPLOAD ẢNH
- * Đưa file từ Buffer lên Supabase Storage và trả về Public URL
+ * 1. HÀM UPLOAD ẢNH (CÓ TÍCH HỢP NÉN SIÊU NHẸ)
  */
 const uploadImageToSupabase = async (fileBuffer, originalName, mimeType, folder = 'utilities') => {
     try {
+        // --- 🚀 BƯỚC NÉN ẢNH ---
+        const compressedBuffer = await sharp(fileBuffer)
+            .resize({
+                width: 800, // Ép chiều rộng tối đa là 800px (Rất nét cho điện thoại/web)
+                withoutEnlargement: true // Nếu ảnh gốc nhỏ hơn 800px thì giữ nguyên, không phóng to làm mờ
+            })
+            .jpeg({ quality: 80 }) // Đổi thành định dạng JPEG và giảm chất lượng còn 80%
+            .toBuffer();
+
+        // --- BƯỚC UPLOAD ---
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        // Làm sạch tên file để tránh lỗi ký tự đặc biệt trên URL
-        const cleanFileName = originalName.replace(/[^a-zA-Z0-9.]/g, "_");
-        const filePath = `${folder}/${uniqueSuffix}-${cleanFileName}`;
+
+        // Đổi đuôi tên file thành .jpg vì ta đã nén nó thành dạng JPEG ở trên
+        const nameWithoutExt = originalName.replace(/[^a-zA-Z0-9]/g, "_").split('_').slice(0, -1).join('_') || 'image';
+        const filePath = `${folder}/${uniqueSuffix}-${nameWithoutExt}.jpg`;
 
         const { data, error } = await supabase.storage
             .from(BUCKET_NAME)
-            .upload(filePath, fileBuffer, {
-                contentType: mimeType,
+            .upload(filePath, compressedBuffer, { // Lưu ý: dùng compressedBuffer thay vì fileBuffer gốc
+                contentType: 'image/jpeg', // Lưu ý: báo cho Supabase đây là file JPEG
                 upsert: false
             });
 
@@ -27,20 +39,18 @@ const uploadImageToSupabase = async (fileBuffer, originalName, mimeType, folder 
         return publicUrlData.publicUrl;
 
     } catch (err) {
-        console.error('Lỗi upload Supabase:', err.message);
+        console.error('Lỗi upload và nén Supabase:', err.message);
         throw new Error('Không thể tải ảnh lên hệ thống lưu trữ.');
     }
 };
 
 /**
- * 2. HÀM XÓA ẢNH
- * Nhận vào một Public URL, tách lấy đường dẫn file và xóa khỏi Storage
+ * 2. HÀM XÓA ẢNH (Giữ nguyên)
  */
 const deleteImageFromSupabase = async (imageUrl) => {
     try {
         if (!imageUrl) return;
 
-        // Tách lấy phần sau tên Bucket để có filePath chính xác
         const parts = imageUrl.split(`${BUCKET_NAME}/`);
         if (parts.length < 2) return;
 
@@ -53,12 +63,11 @@ const deleteImageFromSupabase = async (imageUrl) => {
         if (error) {
             console.error("Lỗi khi xoá file trên Supabase:", error.message);
         } else {
-            console.log("✅ Đã dọn dẹp ảnh cũ trên Supabase:", filePath);
+            console.log("✅ Đã dọn dẹp ảnh trên Supabase:", filePath);
         }
     } catch (e) {
         console.error("Lỗi hệ thống khi dọn dẹp ảnh:", e.message);
     }
 };
 
-// XUẤT CẢ 2 HÀM ĐỂ CÁC FILE ROUTES SỬ DỤNG
 module.exports = { uploadImageToSupabase, deleteImageFromSupabase };
