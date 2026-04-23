@@ -2,13 +2,14 @@ const supabase = require('../config/supabaseConfig');
 
 const BUCKET_NAME = 'apd_public_assets';
 
-// ==========================================
-// 1. HÀM UPLOAD ẢNH
-// ==========================================
+/**
+ * 1. HÀM UPLOAD ẢNH
+ * Đưa file từ Buffer lên Supabase Storage và trả về Public URL
+ */
 const uploadImageToSupabase = async (fileBuffer, originalName, mimeType, folder = 'utilities') => {
     try {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        // Làm sạch tên file, tránh lỗi ký tự đặc biệt
+        // Làm sạch tên file để tránh lỗi ký tự đặc biệt trên URL
         const cleanFileName = originalName.replace(/[^a-zA-Z0-9.]/g, "_");
         const filePath = `${folder}/${uniqueSuffix}-${cleanFileName}`;
 
@@ -21,7 +22,7 @@ const uploadImageToSupabase = async (fileBuffer, originalName, mimeType, folder 
 
         if (error) throw error;
 
-        // Lấy URL Public để lưu vào DB
+        // Lấy URL Public để lưu vào Database
         const { data: publicUrlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
         return publicUrlData.publicUrl;
 
@@ -31,13 +32,15 @@ const uploadImageToSupabase = async (fileBuffer, originalName, mimeType, folder 
     }
 };
 
-// ==========================================
-// 2. HÀM XÓA ẢNH (Cái chổi dọn rác)
-// ==========================================
+/**
+ * 2. HÀM XÓA ẢNH
+ * Nhận vào một Public URL, tách lấy đường dẫn file và xóa khỏi Storage
+ */
 const deleteImageFromSupabase = async (imageUrl) => {
     try {
         if (!imageUrl) return;
 
+        // Tách lấy phần sau tên Bucket để có filePath chính xác
         const parts = imageUrl.split(`${BUCKET_NAME}/`);
         if (parts.length < 2) return;
 
@@ -48,12 +51,14 @@ const deleteImageFromSupabase = async (imageUrl) => {
             .remove([filePath]);
 
         if (error) {
-            console.error("Lỗi khi xoá file trên Supabase:", error);
+            console.error("Lỗi khi xoá file trên Supabase:", error.message);
+        } else {
+            console.log("✅ Đã dọn dẹp ảnh cũ trên Supabase:", filePath);
         }
     } catch (e) {
-        console.error("Lỗi hệ thống khi dọn dẹp ảnh:", e);
+        console.error("Lỗi hệ thống khi dọn dẹp ảnh:", e.message);
     }
 };
 
-// CHỈ CÓ ĐÚNG 1 DÒNG EXPORT NÀY NẰM Ở CUỐI CÙNG THÔI NHÉ!
+// XUẤT CẢ 2 HÀM ĐỂ CÁC FILE ROUTES SỬ DỤNG
 module.exports = { uploadImageToSupabase, deleteImageFromSupabase };
