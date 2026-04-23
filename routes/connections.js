@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
-
-// Đã chèn đúng đường dẫn file DB của bạn
 const pool = require('../config/db');
+const multer = require('multer');
+const { uploadImageToSupabase } = require('../services/storageService'); // Import service upload
+
+// Dùng memoryStorage để xử lý file trên RAM trước khi đẩy lên Supabase
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
 // 1. API LẤY DANH SÁCH (GET)
@@ -17,33 +20,61 @@ router.get('/', async (req, res) => {
 });
 
 // ==========================================
-// 2. API THÊM MỤC MỚI (POST)
+// 2. API THÊM MỤC MỚI (POST) - CÓ UPLOAD SUPABASE
 // ==========================================
-router.post('/', async (req, res) => {
-    const { title, image, link } = req.body;
+router.post('/', upload.single('image'), async (req, res) => {
+    const { title, link } = req.body;
     try {
+        let imageUrl = '';
+
+        // Nếu có gửi file, đẩy thẳng lên Supabase thư mục 'connections'
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                'connections'
+            );
+        }
+
         await pool.query(
             'INSERT INTO connections (title, image, link) VALUES ($1, $2, $3)',
-            [title, image, link || ""]
+            [title, imageUrl, link || ""]
         );
         res.json({ message: "Đã thêm thành công" });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: error.message });
     }
 });
 
 // ==========================================
-// 3. API SỬA/CẬP NHẬT MỤC (PUT) - MỚI THÊM
+// 3. API SỬA/CẬP NHẬT MỤC (PUT) - CÓ UPLOAD SUPABASE
 // ==========================================
-router.put('/:id', async (req, res) => {
-    const { title, image, link } = req.body;
+router.put('/:id', upload.single('image'), async (req, res) => {
+    const { title, link } = req.body;
     try {
+        // Lấy link ảnh cũ trong DB để giữ nguyên nếu user không chọn ảnh mới
+        const oldData = await pool.query('SELECT image FROM connections WHERE id = $1', [req.params.id]);
+        let imageUrl = oldData.rows[0].image;
+
+        // Nếu admin có chọn file ảnh MỚI -> Upload lên Supabase và lấy link mới
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                'connections'
+            );
+        }
+
         await pool.query(
             'UPDATE connections SET title = $1, image = $2, link = $3 WHERE id = $4',
-            [title, image, link || "", req.params.id]
+            [title, imageUrl, link || "", req.params.id]
         );
         res.json({ message: "Đã cập nhật thành công" });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: error.message });
     }
 });

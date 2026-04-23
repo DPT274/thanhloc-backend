@@ -1,39 +1,74 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
+const multer = require('multer');
+const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+
+// Cấu hình Multer để lưu file tạm trên RAM
+const upload = multer({ storage: multer.memoryStorage() });
 
 // --- QUẢN LÝ LỚP HỌC (ADMIN) ---
 router.get('/classes', async (req, res) => {
     try {
-        const r = await pool.query('SELECT id, title, description, location, points_reward FROM education_classes ORDER BY id DESC');
+        const r = await pool.query('SELECT id, title, description, location, image, points_reward FROM education_classes ORDER BY id DESC');
         res.json(r.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-router.post('/classes', async (req, res) => {
-    const { title, description, location, image, points_reward } = req.body;
+// THÊM LỚP HỌC MỚI (CÓ UPLOAD SUPABASE)
+router.post('/classes', upload.single('image'), async (req, res) => {
+    const { title, description, location, points_reward } = req.body;
     try {
+        let imageUrl = '';
+
+        // Nếu có ảnh -> Upload lên Supabase thư mục 'education_classes'
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                'education_classes'
+            );
+        }
+
         await pool.query(
             'INSERT INTO education_classes (title, description, location, image, points_reward) VALUES ($1, $2, $3, $4, $5)',
-            [title, description, location, image, points_reward]
+            [title, description, location, imageUrl, points_reward || 0]
         );
         res.json({ message: "Đã thêm lớp học mới!" });
     } catch (error) {
+        console.error("Lỗi khi thêm lớp học:", error);
         res.status(500).json({ error: error.message });
     }
 });
 
-router.put('/classes/:id', async (req, res) => {
-    const { title, description, location, image, points_reward } = req.body;
+// CẬP NHẬT LỚP HỌC (CÓ UPLOAD SUPABASE)
+router.put('/classes/:id', upload.single('image'), async (req, res) => {
+    const { title, description, location, points_reward } = req.body;
     try {
+        // Lấy link ảnh cũ
+        const oldData = await pool.query('SELECT image FROM education_classes WHERE id = $1', [req.params.id]);
+        let imageUrl = oldData.rows[0].image;
+
+        // Nếu admin upload ảnh mới -> đẩy lên Supabase và lấy link mới
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                'education_classes'
+            );
+        }
+
         await pool.query(
             'UPDATE education_classes SET title = $1, description = $2, location = $3, image = $4, points_reward = $5 WHERE id = $6',
-            [title, description, location, image, points_reward, req.params.id]
+            [title, description, location, imageUrl, points_reward || 0, req.params.id]
         );
         res.json({ message: "Đã cập nhật lớp học!" });
     } catch (error) {
+        console.error("Lỗi khi cập nhật lớp học:", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -118,4 +153,5 @@ router.delete('/registrations/:id', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 module.exports = router;

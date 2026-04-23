@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
+const multer = require('multer');
+const { uploadImageToSupabase } = require('../services/storageService'); // Import service upload
+
+// Dùng memoryStorage để xử lý file trên RAM
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', async (req, res) => {
     try {
@@ -24,12 +29,30 @@ router.get('/admin', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/', async (req, res) => {
+// ==========================================
+// THÊM BANNER MỚI (CÓ UPLOAD SUPABASE)
+// ==========================================
+router.post('/', upload.single('image'), async (req, res) => {
     try {
-        const { image_url } = req.body;
-        await pool.query('INSERT INTO banners (image_url, is_active) VALUES ($1, true)', [image_url]);
+        if (!req.file) {
+            return res.status(400).json({ error: "Vui lòng đính kèm file ảnh!" });
+        }
+
+        // Đẩy ảnh lên thư mục 'banners' trên Supabase Storage
+        const imageUrl = await uploadImageToSupabase(
+            req.file.buffer,
+            req.file.originalname,
+            req.file.mimetype,
+            'banners'
+        );
+
+        // Lưu Public URL vào Database
+        await pool.query('INSERT INTO banners (image_url, is_active) VALUES ($1, true)', [imageUrl]);
         res.json({ message: "Thêm banner thành công" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error("Lỗi upload Banner:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.put('/:id', async (req, res) => {

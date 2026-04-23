@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
+const multer = require('multer');
+const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+
+// Cấu hình Multer để nhận file
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
-// 1. API QUẢN LÝ LINK (TAB 1)
+// 1. API QUẢN LÝ LINK (TAB 1) - CÓ UPLOAD SUPABASE
 // ==========================================
 router.get('/links', async (req, res) => {
     try {
@@ -12,18 +17,33 @@ router.get('/links', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/links', async (req, res) => {
+router.post('/links', upload.single('image'), async (req, res) => {
     try {
-        const { title, image, link } = req.body;
-        await pool.query('INSERT INTO admin_links (title, image, link) VALUES ($1, $2, $3)', [title, image, link]);
+        const { title, link } = req.body;
+        let imageUrl = '';
+
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'admin_links');
+        }
+
+        await pool.query('INSERT INTO admin_links (title, image, link) VALUES ($1, $2, $3)', [title, imageUrl, link]);
         res.json({ message: "OK" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/links/:id', async (req, res) => {
+router.put('/links/:id', upload.single('image'), async (req, res) => {
     try {
-        const { title, image, link } = req.body;
-        await pool.query('UPDATE admin_links SET title = $1, image = $2, link = $3 WHERE id = $4', [title, image, link, req.params.id]);
+        const { title, link } = req.body;
+        let imageUrl = '';
+
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'admin_links');
+        } else {
+            const oldData = await pool.query('SELECT image FROM admin_links WHERE id = $1', [req.params.id]);
+            imageUrl = oldData.rows[0]?.image || '';
+        }
+
+        await pool.query('UPDATE admin_links SET title = $1, image = $2, link = $3 WHERE id = $4', [title, imageUrl, link, req.params.id]);
         res.json({ message: "OK" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -36,12 +56,18 @@ router.delete('/links/:id', async (req, res) => {
 });
 
 // ==========================================
-// 2. API NGƯỜI DÂN NỘP MINH CHỨNG
+// 2. API NGƯỜI DÂN NỘP MINH CHỨNG - CÓ UPLOAD SUPABASE
 // ==========================================
-router.post('/submissions', async (req, res) => {
+router.post('/submissions', upload.single('image'), async (req, res) => {
     try {
-        const { phone, name, image } = req.body;
-        await pool.query('INSERT INTO admin_submissions (phone, name, image) VALUES ($1, $2, $3)', [phone, name, image]);
+        const { phone, name } = req.body;
+        let imageUrl = '';
+
+        if (req.file) {
+            imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'admin_submissions');
+        }
+
+        await pool.query('INSERT INTO admin_submissions (phone, name, image) VALUES ($1, $2, $3)', [phone, name, imageUrl]);
         res.json({ message: "Nộp minh chứng thành công!" });
     } catch (e) {
         console.error("Lỗi khi lưu minh chứng:", e);
@@ -66,7 +92,6 @@ router.get('/submissions', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ✅ MỚI: SỬA HỒ SƠ TỪ ADMIN
 router.put('/submissions/:id', async (req, res) => {
     try {
         const { name, phone, status } = req.body;
@@ -75,7 +100,6 @@ router.put('/submissions/:id', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ✅ MỚI: XOÁ HỒ SƠ TỪ ADMIN
 router.delete('/submissions/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM admin_submissions WHERE id = $1', [req.params.id]);
@@ -83,7 +107,6 @@ router.delete('/submissions/:id', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DUYỆT (CỘNG ĐIỂM)
 router.put('/submissions/:id/approve', async (req, res) => {
     const { points_reward, phone, name } = req.body;
     try {
@@ -100,7 +123,6 @@ router.put('/submissions/:id/approve', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// TỪ CHỐI
 router.put('/submissions/:id/reject', async (req, res) => {
     try {
         await pool.query("UPDATE admin_submissions SET status = 'Từ chối' WHERE id = $1", [req.params.id]);
