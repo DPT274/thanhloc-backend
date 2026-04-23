@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Dùng memoryStorage để xử lý file trên RAM
 const upload = multer({ storage: multer.memoryStorage() });
@@ -41,16 +42,21 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// Cập nhật báo (CÓ UPLOAD SUPABASE)
+// Cập nhật báo (CÓ UPLOAD SUPABASE & DỌN RÁC)
 router.put('/:id', upload.single('image'), async (req, res) => {
     const { name, link } = req.body;
     try {
         // Lấy link cũ từ database
         const oldData = await pool.query('SELECT image FROM press WHERE id = $1', [req.params.id]);
-        let imageUrl = oldData.rows[0].image;
+        let imageUrl = oldData.rows[0]?.image;
 
-        // Nếu có ảnh mới -> upload và lấy link mới
+        // Nếu có ảnh mới -> Dọn rác ảnh cũ, rồi upload lấy link mới
         if (req.file) {
+            // ✅ DỌN RÁC: Xóa logo cũ trên Supabase trước
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
+
             imageUrl = await uploadImageToSupabase(
                 req.file.buffer,
                 req.file.originalname,
@@ -70,10 +76,21 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     }
 });
 
-// Xóa báo
+// Xóa báo (CÓ DỌN RÁC TRONG KHO)
 router.delete('/:id', async (req, res) => {
     try {
+        // ✅ DỌN RÁC: 1. Lấy link ảnh cũ trước khi xóa dữ liệu
+        const data = await pool.query('SELECT image FROM press WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
+        // 2. Xóa dòng trong Database
         await pool.query('DELETE FROM press WHERE id = $1', [req.params.id]);
+
+        // 3. Tiêu hủy file logo thật trên Supabase
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Đã xóa" });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });

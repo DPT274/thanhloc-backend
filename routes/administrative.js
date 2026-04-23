@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Cấu hình Multer để nhận file
 const upload = multer({ storage: multer.memoryStorage() });
@@ -34,13 +35,18 @@ router.post('/links', upload.single('image'), async (req, res) => {
 router.put('/links/:id', upload.single('image'), async (req, res) => {
     try {
         const { title, link } = req.body;
-        let imageUrl = '';
+
+        // Lấy link ảnh cũ
+        const oldData = await pool.query('SELECT image FROM admin_links WHERE id = $1', [req.params.id]);
+        let imageUrl = oldData.rows[0]?.image || '';
 
         if (req.file) {
+            // ✅ Dọn rác: Xóa icon cũ trên Supabase nếu có
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
+            // Tải icon mới lên
             imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'admin_links');
-        } else {
-            const oldData = await pool.query('SELECT image FROM admin_links WHERE id = $1', [req.params.id]);
-            imageUrl = oldData.rows[0]?.image || '';
         }
 
         await pool.query('UPDATE admin_links SET title = $1, image = $2, link = $3 WHERE id = $4', [title, imageUrl, link, req.params.id]);
@@ -50,7 +56,16 @@ router.put('/links/:id', upload.single('image'), async (req, res) => {
 
 router.delete('/links/:id', async (req, res) => {
     try {
+        // ✅ Dọn rác: Lấy link ảnh và xóa file vật lý trước
+        const data = await pool.query('SELECT image FROM admin_links WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
         await pool.query('DELETE FROM admin_links WHERE id = $1', [req.params.id]);
+
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "OK" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -102,7 +117,17 @@ router.put('/submissions/:id', async (req, res) => {
 
 router.delete('/submissions/:id', async (req, res) => {
     try {
+        // ✅ Dọn rác: Lấy link ảnh hồ sơ trước khi xóa
+        const data = await pool.query('SELECT image FROM admin_submissions WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
         await pool.query('DELETE FROM admin_submissions WHERE id = $1', [req.params.id]);
+
+        // Xóa ảnh hồ sơ trong Supabase
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Đã xoá hồ sơ!" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -2,13 +2,14 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import service
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Cấu hình Multer để nhận file
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
-// 1. QUẢN LÝ DANH MỤC (CÓ UPLOAD SUPABASE)
+// 1. QUẢN LÝ DANH MỤC (CÓ UPLOAD SUPABASE & DỌN RÁC)
 // ==========================================
 
 router.get('/categories/all', async (req, res) => {
@@ -36,15 +37,18 @@ router.put('/categories/:oldCategory', upload.single('image'), async (req, res) 
     try {
         const oldCat = req.params.oldCategory;
         const { newCategory } = req.body;
-        let imageUrl = '';
+
+        // Lấy ảnh cũ từ DB
+        const oldData = await pool.query('SELECT image FROM tourism_icons WHERE category = $1', [oldCat]);
+        let imageUrl = oldData.rows[0]?.image || '';
 
         if (req.file) {
+            // ✅ DỌN RÁC: Xóa icon danh mục cũ trên Supabase
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
             // Có ảnh mới -> Tải lên Supabase
             imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'tourism_categories');
-        } else {
-            // Lấy lại ảnh cũ từ DB
-            const oldData = await pool.query('SELECT image FROM tourism_icons WHERE category = $1', [oldCat]);
-            imageUrl = oldData.rows[0]?.image || '';
         }
 
         await pool.query('UPDATE tourism_icons SET category = $1, image = $2 WHERE category = $3', [newCategory, imageUrl, oldCat]);
@@ -56,15 +60,31 @@ router.put('/categories/:oldCategory', upload.single('image'), async (req, res) 
 router.delete('/categories/:category', async (req, res) => {
     try {
         const cat = req.params.category;
+
+        // ✅ DỌN RÁC TỔNG LỰC: Lấy cả ảnh danh mục VÀ tất cả ảnh địa điểm thuộc danh mục đó
+        const catData = await pool.query('SELECT image FROM tourism_icons WHERE category = $1', [cat]);
+        const catImageUrl = catData.rows[0]?.image;
+
+        const placesData = await pool.query('SELECT image FROM tourism_places WHERE category = $1', [cat]);
+        const placesImages = placesData.rows.map(row => row.image).filter(img => img); // Lọc ra các dòng có ảnh
+
+        // 1. Xóa trong Database
         await pool.query('DELETE FROM tourism_icons WHERE category = $1', [cat]);
         await pool.query('DELETE FROM tourism_places WHERE category = $1', [cat]);
-        res.json({ message: "Đã xoá danh mục!" });
+
+        // 2. Tiêu hủy file trên Supabase (Cả Icon danh mục lẫn các hình ảnh địa điểm bên trong)
+        if (catImageUrl) await deleteImageFromSupabase(catImageUrl);
+        for (const img of placesImages) {
+            await deleteImageFromSupabase(img);
+        }
+
+        res.json({ message: "Đã xoá danh mục và dọn dẹp sạch sẽ các địa điểm liên quan!" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 
 // ==========================================
-// 2. QUẢN LÝ ĐỊA ĐIỂM (CÓ UPLOAD SUPABASE)
+// 2. QUẢN LÝ ĐỊA ĐIỂM (CÓ UPLOAD SUPABASE & DỌN RÁC)
 // ==========================================
 
 router.get('/:category', async (req, res) => {
@@ -74,7 +94,6 @@ router.get('/:category', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Thêm mới địa điểm
 router.post('/', upload.single('image'), async (req, res) => {
     try {
         const { category, name, address, phone, description, map_link, page_link, rating, price, open_hours } = req.body;
@@ -95,17 +114,20 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// Cập nhật địa điểm
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { category, name, address, phone, description, map_link, page_link, rating, price, open_hours } = req.body;
-        let imageUrl = '';
+
+        // Lấy thông tin ảnh cũ
+        const oldData = await pool.query('SELECT image FROM tourism_places WHERE id = $1', [req.params.id]);
+        let imageUrl = oldData.rows[0]?.image || '';
 
         if (req.file) {
+            // ✅ DỌN RÁC: Xóa ảnh cũ trước khi tải ảnh mới
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
             imageUrl = await uploadImageToSupabase(req.file.buffer, req.file.originalname, req.file.mimetype, 'tourism_places');
-        } else {
-            const oldData = await pool.query('SELECT image FROM tourism_places WHERE id = $1', [req.params.id]);
-            imageUrl = oldData.rows[0]?.image || '';
         }
 
         await pool.query(
@@ -121,7 +143,17 @@ router.put('/:id', upload.single('image'), async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
     try {
+        // ✅ DỌN RÁC: Lấy link ảnh trước khi xóa
+        const data = await pool.query('SELECT image FROM tourism_places WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
         await pool.query('DELETE FROM tourism_places WHERE id = $1', [req.params.id]);
+
+        // Tiêu hủy file trên Supabase
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Đã xoá thành công!" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

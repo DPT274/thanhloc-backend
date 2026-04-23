@@ -1,9 +1,10 @@
 // routes/utilities.js
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db'); // Thay đổi đường dẫn db.js nếu cần
+const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService');
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Dùng memoryStorage để không lưu file rác lên ổ cứng của Render
 const upload = multer({ storage: multer.memoryStorage() });
@@ -45,17 +46,23 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// 3. Cập nhật tiện ích
+// 3. Cập nhật tiện ích (CÓ DỌN RÁC ẢNH CŨ)
 router.put('/:id', upload.single('image'), async (req, res) => {
     const { id } = req.params;
     const { name, action_path, order_index } = req.body;
     try {
         // Lấy thông tin cũ để giữ lại ảnh nếu không cập nhật ảnh mới
         const oldUtility = await pool.query('SELECT image FROM utilities WHERE id = $1', [id]);
-        let imageUrl = oldUtility.rows[0].image;
+        let imageUrl = oldUtility.rows[0]?.image;
 
         // Nếu có file ảnh mới
         if (req.file) {
+            // ✅ DỌN RÁC: Xoá icon cũ trên Supabase trước
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
+
+            // Tải icon mới lên
             imageUrl = await uploadImageToSupabase(
                 req.file.buffer, req.file.originalname, req.file.mimetype, 'utilities_icons'
             );
@@ -72,11 +79,22 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     }
 });
 
-// 4. Xóa tiện ích
+// 4. Xóa tiện ích (CÓ DỌN RÁC TRONG KHO)
 router.delete('/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        // ✅ DỌN RÁC: 1. Lấy link ảnh cũ trước khi xóa dữ liệu
+        const data = await pool.query('SELECT image FROM utilities WHERE id = $1', [id]);
+        const oldImageUrl = data.rows[0]?.image;
+
+        // 2. Xóa dữ liệu trong Database
         await pool.query('DELETE FROM utilities WHERE id = $1', [id]);
+
+        // 3. Tiêu hủy file vật lý trên Supabase
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: 'Đã xóa thành công' });
     } catch (err) {
         res.status(500).json({ error: 'Lỗi xóa tiện ích' });

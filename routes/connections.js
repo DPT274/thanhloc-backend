@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import service upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Dùng memoryStorage để xử lý file trên RAM trước khi đẩy lên Supabase
 const upload = multer({ storage: multer.memoryStorage() });
@@ -49,17 +50,23 @@ router.post('/', upload.single('image'), async (req, res) => {
 });
 
 // ==========================================
-// 3. API SỬA/CẬP NHẬT MỤC (PUT) - CÓ UPLOAD SUPABASE
+// 3. API SỬA/CẬP NHẬT MỤC (PUT) - ✅ CÓ DỌN RÁC ẢNH CŨ
 // ==========================================
 router.put('/:id', upload.single('image'), async (req, res) => {
     const { title, link } = req.body;
     try {
-        // Lấy link ảnh cũ trong DB để giữ nguyên nếu user không chọn ảnh mới
+        // Lấy link ảnh cũ trong DB
         const oldData = await pool.query('SELECT image FROM connections WHERE id = $1', [req.params.id]);
-        let imageUrl = oldData.rows[0].image;
+        let imageUrl = oldData.rows[0]?.image;
 
-        // Nếu admin có chọn file ảnh MỚI -> Upload lên Supabase và lấy link mới
+        // Nếu admin có chọn file ảnh MỚI
         if (req.file) {
+            // ✅ DỌN RÁC: Xoá file ảnh cũ trên Supabase trước
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
+
+            // Upload ảnh mới lên Supabase và lấy link
             imageUrl = await uploadImageToSupabase(
                 req.file.buffer,
                 req.file.originalname,
@@ -80,11 +87,22 @@ router.put('/:id', upload.single('image'), async (req, res) => {
 });
 
 // ==========================================
-// 4. API XOÁ MỤC (DELETE)
+// 4. API XOÁ MỤC (DELETE) - ✅ CÓ DỌN RÁC TRONG KHO
 // ==========================================
 router.delete('/:id', async (req, res) => {
     try {
+        // ✅ DỌN RÁC: 1. Lấy link ảnh cũ trước khi xóa dữ liệu
+        const data = await pool.query('SELECT image FROM connections WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
+        // 2. Xóa dòng trong Database
         await pool.query('DELETE FROM connections WHERE id = $1', [req.params.id]);
+
+        // 3. Tiêu hủy file ảnh vật lý trên kho Storage
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Đã xoá" });
     } catch (error) {
         res.status(500).json({ error: error.message });

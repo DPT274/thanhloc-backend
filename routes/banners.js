@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import service upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Dùng memoryStorage để xử lý file trên RAM
 const upload = multer({ storage: multer.memoryStorage() });
@@ -55,6 +56,9 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
+// ==========================================
+// CẬP NHẬT TRẠNG THÁI (Bật/tắt banner, không đổi ảnh)
+// ==========================================
 router.put('/:id', async (req, res) => {
     try {
         const { is_active } = req.body;
@@ -63,9 +67,23 @@ router.put('/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ==========================================
+// XÓA BANNER (CÓ TÍCH HỢP XÓA ẢNH TRONG STORAGE)
+// ==========================================
 router.delete('/:id', async (req, res) => {
     try {
+        // ✅ Dọn rác: 1. Lấy link ảnh từ cột image_url trước
+        const data = await pool.query('SELECT image_url FROM banners WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image_url;
+
+        // 2. Xóa dòng đó trong Database
         await pool.query('DELETE FROM banners WHERE id = $1', [req.params.id]);
+
+        // 3. Tiêu hủy file ảnh thật nằm trên Supabase
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Xóa banner thành công" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

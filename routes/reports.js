@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Cấu hình Multer để nhận file ảnh từ Mini App
 const upload = multer({ storage: multer.memoryStorage() });
@@ -45,10 +46,21 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// 3. Xoá phản ánh (Của Admin)
+// 3. Xoá phản ánh (Của Admin) - ✅ CÓ DỌN RÁC TRONG KHO
 router.delete('/:id', async (req, res) => {
     try {
+        // ✅ DỌN RÁC: 1. Lấy link ảnh từ DB trước khi xóa dòng phản ánh
+        const data = await pool.query('SELECT image FROM reports WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
+        // 2. Xóa dữ liệu trong Database
         await pool.query('DELETE FROM reports WHERE id = $1', [req.params.id]);
+
+        // 3. Tiêu hủy ảnh hiện trường thật trên Supabase để giải phóng dung lượng
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "Đã xoá phản ánh thành công!" });
     } catch (error) {
         res.status(500).json({ error: error.message });

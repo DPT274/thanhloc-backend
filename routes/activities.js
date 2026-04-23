@@ -2,12 +2,15 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const multer = require('multer');
-const { uploadImageToSupabase } = require('../services/storageService'); // Import hàm upload
+// ✅ ĐÃ SỬA: Import thêm hàm deleteImageFromSupabase
+const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
 // Cấu hình lưu tạm file trên RAM
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Lấy danh sách hoạt động
+// ==========================================
+// Lấy danh sách hoạt động (GET)
+// ==========================================
 router.get('/', async (req, res) => {
     try {
         const r = await pool.query('SELECT * FROM activities ORDER BY id DESC');
@@ -17,13 +20,14 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Thêm hoạt động mới (CÓ UPLOAD SUPABASE)
+// ==========================================
+// Thêm hoạt động mới (POST)
+// ==========================================
 router.post('/', upload.single('image'), async (req, res) => {
     const { title, content, points_reward } = req.body;
     try {
         let imageUrl = '';
 
-        // Đẩy file lên thư mục 'activity_images' trên Supabase
         if (req.file) {
             imageUrl = await uploadImageToSupabase(
                 req.file.buffer,
@@ -44,16 +48,24 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// Cập nhật hoạt động (CÓ UPLOAD SUPABASE)
+// ==========================================
+// Cập nhật hoạt động (PUT) - ✅ CÓ TÍCH HỢP XÓA ẢNH CŨ
+// ==========================================
 router.put('/:id', upload.single('image'), async (req, res) => {
     const { title, content, points_reward } = req.body;
     try {
         // Lấy link ảnh cũ
         const oldData = await pool.query('SELECT image FROM activities WHERE id = $1', [req.params.id]);
-        let imageUrl = oldData.rows[0].image;
+        let imageUrl = oldData.rows[0]?.image;
 
-        // Nếu admin upload file ảnh MỚI -> đẩy lên Supabase và lấy link mới
+        // Nếu admin upload file ảnh MỚI -> Xóa ảnh cũ đi, sau đó đẩy ảnh mới lên
         if (req.file) {
+            // 1. Dọn rác: Xóa ảnh cũ trên Supabase
+            if (imageUrl) {
+                await deleteImageFromSupabase(imageUrl);
+            }
+
+            // 2. Tải ảnh mới lên
             imageUrl = await uploadImageToSupabase(
                 req.file.buffer,
                 req.file.originalname,
@@ -73,10 +85,23 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     }
 });
 
-// Xóa hoạt động
+// ==========================================
+// Xóa hoạt động (DELETE) - ✅ CÓ TÍCH HỢP XÓA ẢNH TRONG KHO
+// ==========================================
 router.delete('/:id', async (req, res) => {
     try {
+        // 1. Lấy link ảnh cũ trước khi xóa dòng dữ liệu
+        const data = await pool.query('SELECT image FROM activities WHERE id = $1', [req.params.id]);
+        const oldImageUrl = data.rows[0]?.image;
+
+        // 2. Xóa dòng dữ liệu trong Database
         await pool.query('DELETE FROM activities WHERE id = $1', [req.params.id]);
+
+        // 3. Dọn rác: Xóa file ảnh thật trên Storage
+        if (oldImageUrl) {
+            await deleteImageFromSupabase(oldImageUrl);
+        }
+
         res.json({ message: "OK" });
     } catch (error) {
         res.status(500).json({ error: error.message });
