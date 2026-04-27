@@ -5,8 +5,11 @@ const pool = require('../config/db');
 const multer = require('multer');
 const { uploadImageToSupabase, deleteImageFromSupabase } = require('../services/storageService');
 
-// Dùng memoryStorage để xử lý file trên RAM
-const upload = multer({ storage: multer.memoryStorage() });
+// ✅ ĐÃ SỬA: Nới lỏng giới hạn fieldSize lên 25MB để chứa ảnh Base64 từ ReactQuill
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fieldSize: 25 * 1024 * 1024 } // Cho phép text dài tối đa 25MB
+});
 
 // 🛡️ HÀM DỌN DẸP LINK SIÊU CẤP (Xóa thẻ <a> giữ lại chữ, hỗ trợ cả xuống dòng)
 const cleanHtmlLinks = (htmlString) => {
