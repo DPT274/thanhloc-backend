@@ -50,7 +50,8 @@ app.use('/api', require('./routes/surveys'));
 
 // Khai báo file webhook mới tạo
 app.use('/api', require('./routes/webhook'));
-
+// ✅ THÊM DÒNG NÀY VÀO ĐỂ NHẬN API ZALO
+app.use('/api/zalo', require('./routes/zalo'));
 
 // Khởi động server
 app.listen(PORT, () => {
